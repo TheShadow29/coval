@@ -51,7 +51,7 @@ class Evaluator:
             self.aggregated_r_num = []
             self.aggregated_r_den = []
 
-    def update(self, coref_info):
+    def update(self, coref_info, cider_for_sys=None):
         (
             key_clusters,
             sys_clusters,
@@ -64,6 +64,14 @@ class Evaluator:
         elif self.metric == lea:
             pn, pd = self.metric(sys_clusters, key_clusters, sys_mention_key_cluster)
             rn, rd = self.metric(key_clusters, sys_clusters, key_mention_sys_cluster)
+        elif self.metric == lea_soft:
+            assert cider_for_sys is not None
+            pn, pd = self.metric(
+                sys_clusters, key_clusters, sys_mention_key_cluster, cider_for_sys
+            )
+            rn, rd = self.metric(
+                key_clusters, sys_clusters, key_mention_sys_cluster, None
+            )
         else:
             pn, pd = self.metric(sys_clusters, sys_mention_key_cluster)
             rn, rd = self.metric(key_clusters, key_mention_sys_cluster)
@@ -220,5 +228,52 @@ def lea(input_clusters, output_clusters, mention_to_gold):
 
         num += len(c) * common_links / float(all_links)
         den += len(c)
+
+    return num, den
+
+
+def lea_soft(input_clusters, output_clusters, mention_to_gold, cider_for_clusters=None):
+    def avg(lst):
+        return sum(lst) / len(lst)
+
+    num, den = 0, 0
+
+    for cix, c in enumerate(input_clusters):
+        if len(c) == 1:
+            all_links = 1
+            if (
+                c[0] in mention_to_gold
+                and len(output_clusters[mention_to_gold[c[0]]]) == 1
+            ):
+                common_links = 1
+            else:
+                common_links = 0
+        else:
+            common_links = 0
+            all_links = len(c) * (len(c) - 1) / 2.0
+            for i, m in enumerate(c):
+                if m in mention_to_gold:
+                    for m2 in c[i + 1 :]:
+                        if (
+                            m2 in mention_to_gold
+                            and mention_to_gold[m] == mention_to_gold[m2]
+                        ):
+                            common_links += 1
+                        # else:
+                        #    print('!! ', m2, '--', m2.get_span(), ' ',
+                        #           m2.min_spans, ' ', mention_to_gold[m], ' ',
+                        #           mention_to_gold[m2], ' ' ,
+                        #           [str(s) for s in output_clusters[
+                        #               mention_to_gold[m]]], ' -- ',
+                        #           [str(s) for s in output_clusters[
+                        #               mention_to_gold[m2]]])
+        if cider_for_clusters is None:
+            num += len(c) * common_links / float(all_links)
+            den += len(c)
+        else:
+            num += (
+                sum(cider_for_clusters[cix]) * len(c) * common_links / float(all_links)
+            )
+            den += len(cider_for_clusters[cix]) * len(c)
 
     return num, den
